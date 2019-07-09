@@ -20,12 +20,13 @@ public class UserController {
 	private UserService userService;
 	
 	@MyRequestMapping("/user")
-	public void getUser(HttpServletRequest req,HttpServletResponse rep,@MyRequestParam("name") String name){
+	public void getUser(HttpServletRequest req,HttpServletResponse rep,@MyRequestParam("name") String name,@MyRequestParam("id") String id){
 		User u = userService.getUser();
 		System.out.println(u);
 		System.out.println(name);
+		System.out.println(id);
 		try {
-			rep.getWriter().write(name);
+			rep.getWriter().write("name:"+name+";id:"+id);
 		} catch (IOException e) {
 			// TODO Auto-generated catch block
 			e.printStackTrace();

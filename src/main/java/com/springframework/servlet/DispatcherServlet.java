@@ -3,7 +3,9 @@ package com.springframework.servlet;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
+import java.lang.annotation.Annotation;
 import java.lang.reflect.Field;
+import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.net.URL;
 import java.util.ArrayList;
@@ -24,7 +26,10 @@ import com.springframework.annotation.MyAutowired;
 import com.springframework.annotation.MyController;
 import com.springframework.annotation.MyRepository;
 import com.springframework.annotation.MyRequestMapping;
+import com.springframework.annotation.MyRequestParam;
 import com.springframework.annotation.MyService;
+import com.xiaojiesir.demo.controller.UserController;
+import com.xiaojiesir.demo.handlerAdapter.HandlerAdapterService;
 
 public class DispatcherServlet extends HttpServlet {
 
@@ -91,10 +96,41 @@ public class DispatcherServlet extends HttpServlet {
 		try {
 			System.out.println("doPost");
 			doDispatch(req,resp);
+			//doDispatchDesignPatterns(req,resp);
 		} catch (Exception e) {
 			// TODO Auto-generated catch block
 			e.printStackTrace();
 		}
+	}
+
+	private void doDispatchDesignPatterns(HttpServletRequest req, HttpServletResponse resp) {
+		// 通过req获取请求的url /myspringmvc/demo/user
+			String url = req.getRequestURI();
+			// /myspringmvc
+			String context = req.getContextPath();
+			// /demo/user
+			String path = url.replaceAll(context, "");
+			
+			// 通过当前的path获取handlerMap的方法名
+			Method method = this.handlerMapping.get(path);
+			// 获取beans容器中的bean
+			UserController instance = (UserController) this.ioc.get("/" + path.split("/")[1]);
+			
+			// 处理参数
+			HandlerAdapterService ha = (HandlerAdapterService) this.ioc.get("myHandlerAdapter"); 
+			Object[] args = ha.handle(req, resp, method, ioc);
+			
+			// 通过反射来实现方法的调用
+			try {
+				method.invoke(instance, args);
+			} catch (IllegalAccessException e) {
+				e.printStackTrace();
+			} catch (IllegalArgumentException e) {
+				e.printStackTrace();
+			} catch (InvocationTargetException e) {
+				e.printStackTrace();
+			}
+
 	}
 
 	private void doDispatch(HttpServletRequest req, HttpServletResponse resp) throws Exception {
@@ -129,18 +165,24 @@ public class DispatcherServlet extends HttpServlet {
 				paramValues[i] = resp;
 				continue;
 			}else if(parameterType == String.class){
-				for (Entry<String,String[]> param : parameterMap.entrySet()) {
-					String value = Arrays.toString(param.getValue())
-							.replaceAll("\\[", "").replaceAll("\\]", "")
-							.replaceAll("\\&", ",");
-					paramValues[i]=value;
-					
-				}
+				//获取当前方法的参数
+				Annotation[][] an = method.getParameterAnnotations();//个数和paramerterTypes.length一样
+				Annotation[] paramAns = an[i];
+				
+				for (Annotation paramAn : paramAns) {
+		        	//判断传进的paramAn.getClass()是不是 MyRequestParam 类型
+		        	if (MyRequestParam.class.isAssignableFrom(paramAn.getClass())) {
+		        		MyRequestParam cr = (MyRequestParam) paramAn;
+		                String value = cr.value();
+		                paramValues[i] = req.getParameter(value);
+		            }
+		        }
 			}
 			
 		}
 		try {
-			String beanName = lowerFirstCase(method.getDeclaringClass().getSimpleName());//获取源代码中给出的‘底层类’简称
+			//String beanName = lowerFirstCase(method.getDeclaringClass().getSimpleName());//获取源代码中给出的‘底层类’简称
+			String beanName = "/" + url.split("/")[1];
 			method.invoke(this.ioc.get(beanName), paramValues);
 		} catch (Exception e) {
 			// TODO: handle exception
@@ -233,6 +275,15 @@ public class DispatcherServlet extends HttpServlet {
 			for (String className : classNames) {
 				Class<?> clazz = Class.forName(className);
 				if(clazz.isAnnotationPresent(MyController.class)){
+					
+					// 通过MyRequestMapping获取值，作为beans的key
+					MyRequestMapping requestMapping = clazz.getAnnotation(MyRequestMapping.class);
+					String key = requestMapping.value();
+					if(!"".equals(key.trim())){
+						ioc.put(key, clazz.newInstance());
+						continue;
+					}
+					// beans的vaue为实例化对象
 					String beanName =lowerFirstCase(clazz.getSimpleName());
 					ioc.put(beanName, clazz.newInstance());
 				}else if(clazz.isAnnotationPresent(MyService.class)){
